@@ -1,6 +1,6 @@
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase, declarative_base
 
-class Base(DeclarativeBase):
+class OrmBase(DeclarativeBase):
     repr_cols_num: int = 3
     repr_cols: tuple[str] = ()
 
@@ -14,5 +14,5 @@ class Base(DeclarativeBase):
 
 
 if __name__ == '__main__':
-    a = Base()
+    a = OrmBase()
     print()

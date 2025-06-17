@@ -30,3 +30,9 @@ class ORMException(BaseExceptionORM):
                  status_code: int = 400,
                  detail: dict[str: Any] = None):
         super().__init__(message, status_code, detail)
+
+class EntryNotFound(ORMException):
+    def __init__(self, message: str = 'Entry not found',
+                 status_code: int = 404,
+                 detail: dict[str: Any] = None):
+        super().__init__(message, status_code, detail)
