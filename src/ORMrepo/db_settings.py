@@ -13,4 +13,4 @@ class ConfigORM(BaseModel, validate_assignment=True):
 
 
 config_orm = ConfigORM()
-config_orm.global_filters = {'id': 1}
+# config_orm.global_filters = {'id': 1}

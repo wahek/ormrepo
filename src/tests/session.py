@@ -39,7 +39,7 @@ async def get_db_session():
 
 async def reload_db():
     async with engine.begin() as conn:
-        await conn.run_sync(OrmBase.metadata.drop_all)
+        # await conn.run_sync(OrmBase.metadata.drop_all)
         await conn.run_sync(OrmBase.metadata.create_all)
     await engine.dispose()
 
