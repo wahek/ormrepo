@@ -3,8 +3,8 @@ import asyncio
 from sqlalchemy.orm import joinedload
 
 from src.ORMrepo.orm import DatabaseRepository, DTORepository
-from src.tests.models import TestModel1, TestModel2, TestModel1Schema, TestModel2Schema, RelationModel1, RelationModel2
-from src.tests.session import get_db_session
+from tests.models import TestModel1, TestModel2, TestModel1Schema, TestModel2Schema, RelationModel1, RelationModel2
+from tests.session import get_db_session
 
 
 async def test_orm_1():

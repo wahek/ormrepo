@@ -1,4 +1,4 @@
-from sqlalchemy.orm import DeclarativeBase, declarative_base
+from sqlalchemy.orm import DeclarativeBase
 
 class OrmBase(DeclarativeBase):
     repr_cols_num: int = 3

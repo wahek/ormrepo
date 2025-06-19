@@ -1,16 +1,15 @@
 import logging
-from typing import Generic, Any, Collection, Iterable, Literal
+from typing import Generic, Any, Iterable
 
-from sqlalchemy import ScalarResult, select, Sequence, BinaryExpression, Column, and_, ClauseElement, inspect
+from sqlalchemy import select, Sequence, BinaryExpression, and_, ClauseElement, inspect
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import RelationshipProperty, Mapper, with_loader_criteria
 from sqlalchemy.orm.strategy_options import LoaderOption
 
-from .exceptions import ConfigurateException, ORMException, EntryNotFound
+from .exceptions import ORMException, EntryNotFound
 from .types_ import Model, Schema, PK
 from .db_settings import config_orm
-
-logger = logging.getLogger(__name__)
+from .logger import logger, format_list_log_preview
 
 
 class NestedUpdater(Generic[Model]):
@@ -32,9 +31,8 @@ class NestedUpdater(Generic[Model]):
         return self.entry
 
     def _apply(self, entry: Any, data: dict[str, Any]) -> None:
-        mapper: Mapper = inspect(entry.__class__)  # Mapper from sqlalchemy.orm.mapper
-        relationships = {rel.key: rel for rel in
-                         mapper.relationships}  # mapper.relationships (Expected type 'collections. Iterable', got '() -> ReadOnlyProperties[RelationshipProperty]' instead)
+        mapper: Mapper = inspect(entry.__class__)
+        relationships = {rel.key: rel for rel in mapper.relationships}  # type: ignore
 
         for key, value in data.items():
             if key in relationships:
@@ -57,7 +55,7 @@ class NestedUpdater(Generic[Model]):
             return
 
         current = getattr(entry, rel.key)
-        target_cls = rel.mapper.class_  # rel.mapper.class_ (Cannot find reference 'class_' in '() -> Mapper')
+        target_cls = rel.mapper.class_  # type: ignore
 
         if isinstance(value, dict):
             if current is None:
@@ -72,12 +70,11 @@ class NestedUpdater(Generic[Model]):
     def _update_one_to_many(self, entry: Any, rel: RelationshipProperty, values: list[Any]) -> None:
         current_list = getattr(entry, rel.key) or []
         new_list: list[Any] = []
-        target_mapper = rel.mapper
-        pk_cols = target_mapper.primary_key  # target_mapper.primary_key (Cannot find reference 'primary_key' in '() -> Mapper')
+        target_mapper: Mapper = rel.mapper # type: ignore
+        pk_cols = target_mapper.primary_key
 
         for item in values:
             if isinstance(item, dict):
-                # match existing by primary key fields
                 key_vals = {col.name: item[col.name] for col in pk_cols if col.name in item}
                 matched = self._find_existing(current_list, key_vals)
 
@@ -86,7 +83,7 @@ class NestedUpdater(Generic[Model]):
                     new_list.append(matched)
                 else:
                     new_obj = target_mapper.class_(
-                        **item)  # target_mapper.class_ (Cannot find reference 'class_' in '() -> Mapper' )
+                        **item)
                     new_list.append(new_obj)
             else:
                 # ORM instance
@@ -229,10 +226,13 @@ class DatabaseRepository(Generic[Model]):
                       *,
                       relation_filters: dict[type[Model], list[ClauseElement]] = None,
                       ) -> Model:
-        return await self._get(pk,
+        res = await self._get(pk,
                                load,
                                relation_filters=relation_filters,
                                one=True)
+        if logger.isEnabledFor(logging.INFO):
+            logger.info("Received %d %s", 1, res)
+        return res
 
     async def get_many(self,
                        filters: Iterable[ClauseElement] = None,
@@ -242,17 +242,22 @@ class DatabaseRepository(Generic[Model]):
                        offset: int = None,
                        limit: int = None
                        ) -> Sequence[Model]:
-        return await self._get(None,
+        res = await self._get(None,
                                filters,
                                load,
                                relation_filters=relation_filters,
                                offset=offset,
                                limit=limit)
+        if logger.isEnabledFor(logging.INFO):
+            logger.info("Received %d %s", len(res), format_list_log_preview(res))
+        return res
 
     async def create(self,
                      model: Model) -> Model:
         self.session.add(model)
         await self.session.flush()
+        if logger.isEnabledFor(logging.INFO):
+            logger.info("Added creations in session %s", model)
         return model
 
     async def update(self,
@@ -262,20 +267,24 @@ class DatabaseRepository(Generic[Model]):
                      *,
                      nested: bool = False
                      ) -> Model:
-        entry = await self._get(pk, load=load, one=True)
+        model = await self._get(pk, load=load, one=True)
         if nested:
-            NestedUpdater(entry).update(data)
+            NestedUpdater(model).update(data)
         else:
             for key, value in data.items():
-                setattr(entry, key, value)
+                setattr(model, key, value)
         await self.session.flush()
-        return entry
+        if logger.isEnabledFor(logging.INFO):
+            logger.info("Added update in session %s", model)
+        return model
 
     async def delete(self, pk: PK) -> Model:
-        entry = await self._get(pk)
-        await self.session.delete(entry)
+        model = await self._get(pk)
+        await self.session.delete(model)
         await self.session.flush()
-        return entry
+        if logger.isEnabledFor(logging.INFO):
+            logger.info("Added deleting in session %s", model)
+        return model
 
 
 class DTORepository(Generic[Model, Schema]):
@@ -288,8 +297,11 @@ class DTORepository(Generic[Model, Schema]):
                       pk: PK,
                       load: list[LoaderOption] = None
                       ) -> Schema:
-        return self._schema.model_validate(await self._repo.get_one(pk, load),
+        res = self._schema.model_validate(await self._repo.get_one(pk, load),
                                            from_attributes=True)
+        if logger.isEnabledFor(logging.INFO):
+            logger.info("Serialized %d %s", 1, res)
+        return res
 
     async def get_many(self,
                        filters: Iterable[ClauseElement] = None,
@@ -302,24 +314,31 @@ class DTORepository(Generic[Model, Schema]):
                                            load,
                                            offset=offset,
                                            limit=limit)
-        return [self._schema.model_validate(x, from_attributes=True)
-                for x in models]
+        res = [self._schema.model_validate(x, from_attributes=True) for x in models] # type: ignore
+        if logger.isEnabledFor(logging.INFO):
+            logger.info("Serialized %d %s", len(res), format_list_log_preview(res))
+        return res
 
     async def create(self,
                      model: Model) -> Schema:
-        return self._schema.model_validate(await self._repo.create(model),
+        res = self._schema.model_validate(await self._repo.create(model),
                                            from_attributes=True)
+        if logger.isEnabledFor(logging.INFO):
+            logger.info("Serialized %d %s", 1, res)
+        return res
 
     async def update(self, pk: PK,
                      data: Schema) -> Schema:
         data = data.model_dump(exclude_unset=True)
-        return self._schema.model_validate(await self._repo.update(pk, data),
+        res = self._schema.model_validate(await self._repo.update(pk, data),
                                            from_attributes=True)
+        if logger.isEnabledFor(logging.INFO):
+            logger.info("Serialized %d %s", 1, res)
+        return res
 
     async def delete(self,
                      pk: PK) -> Schema:
-        return await self._schema.model_validate(self._repo.delete(pk))
-
-
-if __name__ == '__main__':
-    pass
+        res = await self._schema.model_validate(self._repo.delete(pk))
+        if logger.isEnabledFor(logging.INFO):
+            logger.info("Serialized %d %s", 1, res)
+        return res

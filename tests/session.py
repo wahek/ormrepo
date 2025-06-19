@@ -8,7 +8,6 @@ from sqlalchemy import exc
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
 from src.ORMrepo.models import OrmBase
-from src.tests.models import TestModel1
 
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
