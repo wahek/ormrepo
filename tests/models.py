@@ -5,7 +5,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.ORMrepo.models import OrmBase
 
 
-class TestModel1(OrmBase):
+class TModel1(OrmBase):
     __tablename__ = "test_model1"
     id: Mapped[int] = mapped_column(primary_key=True)
     serial: Mapped[int] = mapped_column(primary_key=True, unique=True)
@@ -17,13 +17,13 @@ class TestModel1(OrmBase):
         uselist=True,
         cascade="all, delete-orphan",
         primaryjoin="and_("
-                    "TestModel1.id == foreign(RelationModel1.test_model1_id), "
-                    "TestModel1.serial == foreign(RelationModel1.test_model1_serial)"
+                    "TModel1.id == foreign(RelationModel1.test_model1_id), "
+                    "TModel1.serial == foreign(RelationModel1.test_model1_serial)"
                     ")"
     )
 
 
-class TestModel2(OrmBase):
+class TModel2(OrmBase):
     __tablename__ = "test_model2"
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str]
@@ -34,13 +34,13 @@ class TestModel2(OrmBase):
                                                             uselist=False)
 
 
-class TestModel1Schema(BaseModel):
+class TModel1Schema(BaseModel):
     id: int
     serial: int
     name: str
 
 
-class TestModel2Schema(BaseModel):
+class TModel2Schema(BaseModel):
     id: int
     name: str
 
@@ -60,8 +60,8 @@ class RelationModel1(OrmBase):
         ),
     )
 
-    test_model1: Mapped["TestModel1"] = relationship(
-        "TestModel1",
+    test_model1: Mapped["TModel1"] = relationship(
+        "TModel1",
         back_populates="relation_models",
         uselist=False,
     )
@@ -72,8 +72,8 @@ class RelationModel2(OrmBase):
     
     test_model2_id: Mapped[int] = mapped_column(ForeignKey("test_model2.id"))
     
-    test_model2: Mapped["TestModel2"] = relationship(
-        "TestModel2",
+    test_model2: Mapped["TModel2"] = relationship(
+        "TModel2",
         back_populates="relation_model",
         uselist=False
     )
