@@ -1,7 +1,6 @@
 from typing import Type, Any, Generic
 
 from pydantic import BaseModel
-from sqlalchemy import inspect
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import Mapper, RelationshipProperty
 
@@ -11,10 +10,10 @@ from .types_ import Model, Schema
 
 class ORMBuilder:
     log()
-    def convert(self, schema: BaseModel | dict, model: Type[Any]) -> Any:
+    def convert(self, schema: Schema | dict, model: Type[Any]) -> Any:
         return self._create_model_from_schema(schema, model)
 
-    def _create_model_from_schema(self, schema: BaseModel | dict, model: Type[Any]) -> Any:
+    def _create_model_from_schema(self, schema: Schema | dict, model: Type[Any]) -> Any:
         data = self._extract_data(schema)
         model_kwargs = {}
 
@@ -33,7 +32,7 @@ class ORMBuilder:
         return model(**model_kwargs)
 
     @staticmethod
-    def _extract_data(schema: BaseModel | dict) -> dict:
+    def _extract_data(schema: Schema | dict) -> dict:
         if isinstance(schema, BaseModel):
             return schema.model_dump()
         elif isinstance(schema, dict):

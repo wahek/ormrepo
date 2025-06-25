@@ -1,6 +1,6 @@
 import inspect
 from functools import wraps
-from typing import Callable, Any, Awaitable, Literal
+from typing import Callable, Any, Awaitable
 import logging
 
 from ormrepo.types_ import log_level
