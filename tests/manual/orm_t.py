@@ -2,7 +2,7 @@ import asyncio
 
 from sqlalchemy.orm import joinedload
 
-from src.ORMrepo.orm import DatabaseRepository, DTORepository
+from src.ormrepo.orm import DatabaseRepository, DTORepository
 from tests.models import TModel1, TModel2, TModel1Schema, TModel2Schema, RelationModel1, RelationModel2
 from tests.session import get_db_session
 
@@ -96,12 +96,19 @@ async def t_orm_12():
 async def t_orm_13():
     async with get_db_session() as session:
         repo = DatabaseRepository(TModel2, session)
-        res = await repo.update(1, {"name": "1test", 'relation_model': {'id': 10}},
+        res = await repo.update(1, {"id": 2, "name": "test1", 'relation_model': {'id': 10}},
                                 load=[joinedload(TModel2.relation_model)],
                                 nested=True)
         print(res)
 
 async def t_orm_14():
+    async with get_db_session() as session:
+        repo = DatabaseRepository(TModel2, session)
+        res = await repo.get_one(1, load=[joinedload(TModel2.relation_model)],
+                                 relation_filters={TModel2: [TModel2.id == 1]})
+        print(res)
+
+async def t_orm_15():
     async with get_db_session() as session:
         repo = DatabaseRepository(TModel2, session)
         res = await repo.get_one(1, load=[joinedload(TModel2.relation_model)],

@@ -11,8 +11,3 @@ class OrmBase(DeclarativeBase):
                 cols.append(f"{col}={getattr(self, col)}")
 
         return f"<{self.__class__.__name__} {', '.join(cols)}>"
-
-
-if __name__ == '__main__':
-    a = OrmBase()
-    print()

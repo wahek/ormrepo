@@ -1,101 +1,16 @@
 import logging
 from typing import Generic, Any, Iterable
 
-from sqlalchemy import select, Sequence, BinaryExpression, and_, ClauseElement, inspect
+from sqlalchemy import select, Sequence, BinaryExpression, and_, ClauseElement
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import RelationshipProperty, Mapper, with_loader_criteria
+from sqlalchemy.orm import with_loader_criteria
 from sqlalchemy.orm.strategy_options import LoaderOption
 
 from .exceptions import ORMException, EntryNotFound
 from .types_ import Model, Schema, PK
 from .db_settings import config_orm
-from .logger import logger, format_list_log_preview
-
-
-class NestedUpdater(Generic[Model]):
-    """
-    Service for applying nested updates to SQLAlchemy ORM instances.
-
-    Usage:
-        updated = NestedUpdater(entry).update(data)
-    """
-
-    def __init__(self, entry: Model):
-        self.entry = entry
-
-    def update(self, data: dict[str, Any]) -> Model:
-        """
-        Recursively apply updates from data to self.entry and return it.
-        """
-        self._apply(self.entry, data)
-        return self.entry
-
-    def _apply(self, entry: Any, data: dict[str, Any]) -> None:
-        mapper: Mapper = inspect(entry.__class__)
-        relationships = {rel.key: rel for rel in mapper.relationships}  # type: ignore
-
-        for key, value in data.items():
-            if key in relationships:
-                rel = relationships[key]
-                if rel.uselist:
-                    self._update_one_to_many(entry, rel, value or [])
-                else:
-                    self._update_one_to_one(entry, rel, value)
-            else:
-                self._update_scalar(entry, key, value)
-
-    @staticmethod
-    def _update_scalar(entry: Any, key: str, value: Any) -> None:
-        setattr(entry, key, value)
-
-    def _update_one_to_one(self, entry: Any, rel: RelationshipProperty, value: Any) -> None:
-        # value can be None, dict[str, Any], or ORM instance
-        if value is None:
-            setattr(entry, rel.key, None)
-            return
-
-        current = getattr(entry, rel.key)
-        target_cls = rel.mapper.class_  # type: ignore
-
-        if isinstance(value, dict):
-            if current is None:
-                new_obj = target_cls(**value)
-                setattr(entry, rel.key, new_obj)
-            else:
-                self._apply(current, value)
-        else:
-            # assume ORM instance
-            setattr(entry, rel.key, value)
-
-    def _update_one_to_many(self, entry: Any, rel: RelationshipProperty, values: list[Any]) -> None:
-        current_list = getattr(entry, rel.key) or []
-        new_list: list[Any] = []
-        target_mapper: Mapper = rel.mapper # type: ignore
-        pk_cols = target_mapper.primary_key
-
-        for item in values:
-            if isinstance(item, dict):
-                key_vals = {col.name: item[col.name] for col in pk_cols if col.name in item}
-                matched = self._find_existing(current_list, key_vals)
-
-                if matched:
-                    self._apply(matched, item)
-                    new_list.append(matched)
-                else:
-                    new_obj = target_mapper.class_(
-                        **item)
-                    new_list.append(new_obj)
-            else:
-                # ORM instance
-                new_list.append(item)
-
-        setattr(entry, rel.key, new_list)
-
-    @staticmethod
-    def _find_existing(objects: list[Any], key_vals: dict[str, Any]) -> Any | None:
-        for obj in objects:
-            if all(getattr(obj, k) == v for k, v in key_vals.items()):
-                return obj
+from .logger import logger, format_list_log_preview, log
+from .utils import NestedUpdater, ORMBuilder
 
 
 class DatabaseRepository(Generic[Model]):
@@ -103,18 +18,11 @@ class DatabaseRepository(Generic[Model]):
                  model: type[Model],
                  session: AsyncSession,
                  use_global_filters: bool = True):
-        """
-        Initialize the database repository.
-
-        Args:
-            model (type[Model]): The SQLAlchemy model to use for this repository.
-            session (AsyncSession | None): The SQLAlchemy async session to use for this repository.
-                                    Pass one session to work with atomic operations.
-        """
         self.model = model
         self.session = session
         self.use_global_filters = use_global_filters
 
+    @log()
     def _resolve_pk_condition(self, pk: PK) -> BinaryExpression:
         pk_columns = self.model.__mapper__.primary_key
         if isinstance(pk, dict):
@@ -123,7 +31,7 @@ class DatabaseRepository(Generic[Model]):
                                    detail={'got': tuple(pk.keys()),
                                            'expected': [col.key for col in pk_columns]})
             conditions = [col == pk[col.key] for col in pk_columns]
-        elif isinstance(pk, tuple):
+        elif isinstance(pk, tuple | list):
             if len(pk_columns) != len(pk):
                 raise ORMException("Composite PK tuple has wrong length.",
                                    detail={'got': len(pk),
@@ -138,6 +46,7 @@ class DatabaseRepository(Generic[Model]):
 
         return and_(*conditions)
 
+    @log()
     def _resolve_global_filters(self, filters: dict[str, Any]):
         conditions = []
         for key, value in filters.items():
@@ -146,6 +55,7 @@ class DatabaseRepository(Generic[Model]):
         return and_(*conditions)
 
     @staticmethod
+    @log()
     def _resolve_related_filters(related_filters: dict[type, list[ClauseElement]]
                                  ) -> list[Any]:
         options = []
@@ -156,6 +66,7 @@ class DatabaseRepository(Generic[Model]):
         return options
 
     @staticmethod
+    @log()
     def _expand_expression(expr: BinaryExpression):
         left = expr.left
         right = expr.right
@@ -169,6 +80,7 @@ class DatabaseRepository(Generic[Model]):
                 operator,
                 value)
 
+    @log()
     async def _get(self,
                    pk: PK = None,
                    filters: Iterable[ClauseElement] = None,
@@ -209,9 +121,9 @@ class DatabaseRepository(Generic[Model]):
         result = await self.session.execute(stmt)
 
         if one:
-            res = result.scalars().one_or_none()
+            res = result.unique().scalars().one_or_none()
         else:
-            res = result.scalars().all()
+            res = result.unique().scalars().all()
         if res:
             return res
         else:
@@ -220,6 +132,7 @@ class DatabaseRepository(Generic[Model]):
                                         'load': load} |
                                        ({'global_filters': config_orm.global_filters}))
 
+    @log()
     async def get_one(self,
                       pk: PK,
                       load: list[LoaderOption] = None,
@@ -227,13 +140,14 @@ class DatabaseRepository(Generic[Model]):
                       relation_filters: dict[type[Model], list[ClauseElement]] = None,
                       ) -> Model:
         res = await self._get(pk,
-                               load,
-                               relation_filters=relation_filters,
-                               one=True)
+                              load=load,
+                              relation_filters=relation_filters,
+                              one=True)
         if logger.isEnabledFor(logging.INFO):
             logger.info("Received %d %s", 1, res)
         return res
 
+    @log()
     async def get_many(self,
                        filters: Iterable[ClauseElement] = None,
                        load: list[LoaderOption] = None,
@@ -243,15 +157,16 @@ class DatabaseRepository(Generic[Model]):
                        limit: int = None
                        ) -> Sequence[Model]:
         res = await self._get(None,
-                               filters,
-                               load,
-                               relation_filters=relation_filters,
-                               offset=offset,
-                               limit=limit)
+                              filters,
+                              load,
+                              relation_filters=relation_filters,
+                              offset=offset,
+                              limit=limit)
         if logger.isEnabledFor(logging.INFO):
             logger.info("Received %d %s", len(res), format_list_log_preview(res))
         return res
 
+    @log()
     async def create(self,
                      model: Model) -> Model:
         self.session.add(model)
@@ -263,23 +178,18 @@ class DatabaseRepository(Generic[Model]):
     async def update(self,
                      pk: PK,
                      data: dict[str, Any],
-                     load: list[LoaderOption] = None,
-                     *,
-                     nested: bool = False
+                     load: list[LoaderOption] = None
                      ) -> Model:
         model = await self._get(pk, load=load, one=True)
-        if nested:
-            NestedUpdater(model).update(data)
-        else:
-            for key, value in data.items():
-                setattr(model, key, value)
+        NestedUpdater(model).update(data)
         await self.session.flush()
         if logger.isEnabledFor(logging.INFO):
             logger.info("Added update in session %s", model)
         return model
 
+    @log()
     async def delete(self, pk: PK) -> Model:
-        model = await self._get(pk)
+        model = await self._get(pk, one=True)
         await self.session.delete(model)
         await self.session.flush()
         if logger.isEnabledFor(logging.INFO):
@@ -290,19 +200,28 @@ class DatabaseRepository(Generic[Model]):
 class DTORepository(Generic[Model, Schema]):
     def __init__(self, repo: DatabaseRepository[Model],
                  schema: type[Schema]):
-        self._repo = repo
+        self.repo = repo
         self._schema = schema
 
+    @log()
+    def _model_validate(self, model: Model | Iterable[Model]) -> Schema | list[Schema]:
+        if isinstance(model, Iterable):
+            return [self._schema.model_validate(x, from_attributes=True) for x in model]
+        return self._schema.model_validate(model,
+                                           from_attributes=True)
+
+    @log()
     async def get_one(self,
                       pk: PK,
                       load: list[LoaderOption] = None
                       ) -> Schema:
-        res = self._schema.model_validate(await self._repo.get_one(pk, load),
-                                           from_attributes=True)
+        res = self._model_validate(
+            await self.repo.get_one(pk, load))
         if logger.isEnabledFor(logging.INFO):
             logger.info("Serialized %d %s", 1, res)
         return res
 
+    @log()
     async def get_many(self,
                        filters: Iterable[ClauseElement] = None,
                        load: list[LoaderOption] = None,
@@ -310,35 +229,41 @@ class DTORepository(Generic[Model, Schema]):
                        offset: int = 0,
                        limit: int = None
                        ) -> list[Schema]:
-        models = await self._repo.get_many(filters,
-                                           load,
-                                           offset=offset,
-                                           limit=limit)
-        res = [self._schema.model_validate(x, from_attributes=True) for x in models] # type: ignore
+        models = await self.repo.get_many(filters,
+                                          load,
+                                          offset=offset,
+                                          limit=limit)
+        res = self._model_validate(models)  # type: ignore
         if logger.isEnabledFor(logging.INFO):
             logger.info("Serialized %d %s", len(res), format_list_log_preview(res))
         return res
 
+    @log()
     async def create(self,
-                     model: Model) -> Schema:
-        res = self._schema.model_validate(await self._repo.create(model),
-                                           from_attributes=True)
+                     schema: Schema) -> Schema:
+        builder = ORMBuilder()
+        model = builder.convert(schema, self.repo.model)
+        res = self._model_validate(await self.repo.create(model))
         if logger.isEnabledFor(logging.INFO):
             logger.info("Serialized %d %s", 1, res)
         return res
 
+    @log()
     async def update(self, pk: PK,
                      data: Schema) -> Schema:
         data = data.model_dump(exclude_unset=True)
-        res = self._schema.model_validate(await self._repo.update(pk, data),
-                                           from_attributes=True)
+        res = self._model_validate(
+            await self.repo.update(
+                pk, data))
         if logger.isEnabledFor(logging.INFO):
             logger.info("Serialized %d %s", 1, res)
         return res
 
+    @log()
     async def delete(self,
                      pk: PK) -> Schema:
-        res = await self._schema.model_validate(self._repo.delete(pk))
+        res = self._model_validate(
+            await self.repo.delete(pk))
         if logger.isEnabledFor(logging.INFO):
             logger.info("Serialized %d %s", 1, res)
         return res

@@ -1,21 +1,23 @@
 [project]
 name = "ormrepo"
-version = "0.1.0"
+version = "0.1"
 description = ""
 authors = [
     {name = "Ivan Maurin",email = "imaurin@totalvideo.ru"}
 ]
+packages = [{ include = "ormrepo", from = "src" }]
 readme = "README.md"
-requires-python = ">=3.12"
-dependencies = [
-    "pydantic (>=2.11.5,<3.0.0)",
-    "sqlalchemy (>=2.0.41,<3.0.0)",
-    "asyncpg (>=0.30.0,<0.31.0)",
-    "python-dotenv (>=1.1.0,<2.0.0)",
-    "pytest (>=8.4.1,<9.0.0)",
-    "pytest-asyncio (>=1.0.0,<2.0.0)"
-]
 
+[tool.poetry.dependencies]
+python = ">=3.11,<4.0"
+sqlalchemy = "^2.0"
+pydantic = "^2.0"
+
+[poetry.group.dev.dependencies]
+pytest = "^8.0"
+pytest-asyncio = "^1.0"
+asyncpg = "^0.30"
+python-dotenv = "^1.0"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
