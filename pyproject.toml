@@ -1,19 +1,36 @@
 [project]
 name = "ormrepo"
 version = "0.1"
-description = ""
+description = "Asynchronous repository pattern with SQLAlchemy 2.0 and Pydantic 2.0 support."
 authors = [
-    {name = "Ivan Maurin",email = "imaurin@totalvideo.ru"}
+    { name = "Ivan Maurin", email = "wahek1999@mail.ru" }
 ]
-packages = [{ include = "ormrepo", from = "src" }]
+license = { text = "MIT" }
 readme = "README.md"
+requires-python = ">=3.11"
+keywords = ["sqlalchemy", "pydantic", "repository", "orm", "async", "database", "dto", "pattern"]
+classifiers = [
+    "Programming Language :: Python :: 3.11",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Framework :: AsyncIO",
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Topic :: Database",
+    "Topic :: Software Development :: Libraries",
+]
+
+urls = { "Homepage" = "https://github.com/wahek/ormrepo" }
 
 [tool.poetry.dependencies]
 python = ">=3.11"
 sqlalchemy = "^2.0"
 pydantic = "^2.0"
 
-[poetry.group.dev.dependencies]
+[tool.poetry]
+packages = [{ include = "ormrepo", from = "src" }]
+
+[tool.poetry.group.dev.dependencies]
 pytest = "^8.0"
 pytest-asyncio = "^1.0"
 asyncpg = "^0.30"
