@@ -1,6 +1,14 @@
 from sqlalchemy.orm import DeclarativeBase
 
 class OrmBase(DeclarativeBase):
+    """
+    Basic model sqlalchemy for ORM
+    Inherit your models from it
+
+    You can change the parameters in its inherited model:
+    repr_cols_num: count of columns output when printing a model
+    repr_cols: specific columns when printing the model
+    """
     repr_cols_num: int = 3
     repr_cols: tuple[str] = ()
 

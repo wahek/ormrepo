@@ -45,6 +45,7 @@ def log(level_n: log_level = 'DEBUG', level_r: log_level = 'DEBUG'):
 
 
 def format_list_log_preview(items: list[Any], preview: int = 5) -> str:
+    """formats a string with a large number of elements"""
     total = len(items)
     if total <= preview * 2:
         return str(items)
