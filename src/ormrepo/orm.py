@@ -29,6 +29,8 @@ class DatabaseRepository(Generic[Model]):
     def __init__(self,
                  model: type[Model],
                  session: AsyncSession,
+                 local_filters: Iterable[ClauseElement] = None,
+                 use_local_filters: bool = True,
                  use_global_filters: bool = True):
         """
         Initializes a new instance of the repository.
@@ -36,11 +38,25 @@ class DatabaseRepository(Generic[Model]):
         :param model: class model sqlalchemy
         :param session: Session for working with the database.
                         For atomic operations, pass one session to multiple class instances
+        :param local_filters: Local filter that applies to all database queries for a repository instance
         :param use_global_filters: Use or disable global filters for a repository instance
         """
         self.model = model
         self.session = session
+        self._local_filters = local_filters
+        self.use_local_filters = use_local_filters
         self.use_global_filters = use_global_filters
+
+    @property
+    def local_filters(self):
+        return self._local_filters
+
+    @local_filters.setter
+    def local_filters(self, value):
+        if not all(isinstance(x, ClauseElement) for x in value):
+            raise ORMException("local_filters must be iterable of sqlalchemy expressions",
+                               detail=f'{type(value)=}')
+        self._local_filters = value
 
     @log()
     def _resolve_pk_condition(self, pk: PK) -> BinaryExpression:
@@ -133,6 +149,9 @@ class DatabaseRepository(Generic[Model]):
 
         if filters:
             stmt = stmt.where(and_(*filters))
+
+        if self.use_local_filters and self._local_filters:
+            stmt = stmt.where(and_(*self._local_filters))
 
         if self.use_global_filters and config_orm.global_filters:
             stmt = stmt.where(self._resolve_global_filters(config_orm.global_filters))
@@ -299,11 +318,14 @@ class DTORepository(Generic[Model, Schema]):
     @log()
     async def get_one(self,
                       pk: PK,
-                      load: list[LoaderOption] = None
+                      load: list[LoaderOption] = None,
+                      *,
+                      relation_filters: dict[Model, list[ClauseElement]] = None,
                       ) -> Schema:
         """
         Method to get a single record from the database and convert response from DTO.
 
+        :param relation_filters: filters for related models example: {Model2: [Model2.id == 1]}
         :param pk: primary key for table (composite or regular) example: {'id': 1} | 1 | (1, 3) etc...
         :param load: sqlalchemy load options: example: [joinedload(Model.relation),...]
                      or [selectinload(Model.relation).joinedload(Model.relation.relation),...] for nested
@@ -311,7 +333,8 @@ class DTORepository(Generic[Model, Schema]):
         :return: pydantic schema
         """
         res = self._model_validate(
-            await self.repo.get_one(pk, load))
+            await self.repo.get_one(pk, load,
+                                    relation_filters=relation_filters))
         if logger.isEnabledFor(logging.INFO):
             logger.info("Serialized %d %s", 1, res)
         return res
@@ -321,12 +344,14 @@ class DTORepository(Generic[Model, Schema]):
                        filters: Iterable[ClauseElement] = None,
                        load: list[LoaderOption] = None,
                        *,
+                       relation_filters: dict[Model, list[ClauseElement]] = None,
                        offset: int = 0,
                        limit: int = None
                        ) -> list[Schema]:
         """
         Method to get multiple records from the database and convert response from DTO
 
+        :param relation_filters: filters for related models example: {Model2: [Model2.id == 1]}
         :param filters: filters for model example: [Model.id == 1, Model.price > 100]
                                                    or [Model.id.in_([1, 2, 3])]
                                                    or [Model.id.like_(%foo%)] etc...
@@ -340,6 +365,7 @@ class DTORepository(Generic[Model, Schema]):
         """
         models = await self.repo.get_many(filters,
                                           load,
+                                          relation_filters=relation_filters,
                                           offset=offset,
                                           limit=limit)
         res = self._model_validate(models)  # type: ignore

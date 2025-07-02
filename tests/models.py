@@ -108,7 +108,7 @@ class RelationModel2Schema(BaseModel):
 
 
 class TModel1Rel1Schema(TModel1Schema):
-    relation_models: list[RelationModel1Schema] = None
+    relation_models: list[RelationModel1Schema] | None = None
 
 
 class TModel2Rel2Schema(TModel2Schema):
