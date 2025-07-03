@@ -1,7 +1,7 @@
-import types_
+import ormrepo.types_
 from .orm import DatabaseRepository, DTORepository
 from .models import OrmBase
-from logger import logger
+from .logger import logger
 
 __all__ = [
     'DatabaseRepository',
