@@ -1,6 +1,7 @@
 import logging
 from typing import Generic, Any, Iterable
 
+from pydantic import BaseModel
 from sqlalchemy import select, Sequence, BinaryExpression, and_, ClauseElement
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import with_loader_criteria
@@ -375,7 +376,7 @@ class DTORepository(Generic[Model, Schema]):
 
     @log()
     async def create(self,
-                     schema: Schema) -> Schema:
+                     schema: BaseModel) -> Schema:
         """
         Method for adding records to a session
 
