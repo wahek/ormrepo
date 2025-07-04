@@ -1,6 +1,6 @@
 [project]
 name = "ormrepo"
-version = "0.2.1"
+version = "0.2.2"
 description = "Asynchronous repository pattern with SQLAlchemy 2.0 and Pydantic 2.0 support."
 authors = [
     { name = "Ivan Maurin", email = "wahek1999@mail.ru" }
