@@ -402,7 +402,7 @@ class DTORepository(Generic[Model, Schema]):
 
     @log()
     async def update(self, pk: PK,
-                     data: Schema,
+                     data: BaseModel,
                      load: list[LoaderOption] = None) -> Schema:
         """
         Method for updating records in a database and adding them to a session then convert response from DTO
