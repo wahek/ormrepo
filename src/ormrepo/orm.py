@@ -179,10 +179,9 @@ class DatabaseRepository(Generic[Model]):
                         'filters': [self._expand_expression(x) for x in filters],
                         'local_filters': self._local_filters if self.use_local_filters else None,
                         'global_filters': config_orm.global_filters if self.use_global_filters else None,
-                        'load': {x.path:getattr(x, "strategy", "unknown") for x in load if isinstance(x, Load)},
+                        'load': load,
                         'relation_filters': relation_filters,
-                        'offset': offset,
-                        'limit': limit})
+                        'offset': offset})
 
     @log()
     async def get_one(self,

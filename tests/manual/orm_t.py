@@ -1,7 +1,8 @@
 import asyncio
 
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 
+from src.ormrepo.exceptions import EntryNotFound
 from src.ormrepo.orm import DatabaseRepository, DTORepository
 from tests.models import TModel1, TModel2, TModel1Schema, TModel2Schema, RelationModel1, RelationModel2
 from tests.session import get_db_session
@@ -97,16 +98,19 @@ async def t_orm_13():
     async with get_db_session() as session:
         repo = DatabaseRepository(TModel2, session)
         res = await repo.update(1, {"id": 2, "name": "test1", 'relation_model': {'id': 10}},
-                                load=[joinedload(TModel2.relation_model)],
-                                nested=True)
+                                load=[joinedload(TModel2.relation_model)])
         print(res)
 
 async def t_orm_14():
     async with get_db_session() as session:
         repo = DatabaseRepository(TModel2, session)
-        res = await repo.get_one(1, load=[joinedload(TModel2.relation_model)],
-                                 relation_filters={TModel2: [TModel2.id == 1]})
-        print(res)
+        try:
+            res = await repo.get_one(1241, load=[selectinload(TModel2.relation_model)],
+                                     relation_filters={TModel2: [TModel2.id == 1]})
+        except EntryNotFound as e:
+            print(e.json_detail())
+            # pass
+        # print(res)
 
 async def t_orm_15():
     async with get_db_session() as session:
@@ -115,13 +119,14 @@ async def t_orm_15():
                                  relation_filters={TModel2: [TModel2.id == 1]})
         print(res)
 
-
+# async def t_orm_16():
+#     async with get_db_session() as session:
 
 
 if __name__ == '__main__':
     async def main():
         await asyncio.gather(
-            t_orm_1(),
+            # t_orm_1(),
             # t_orm_2(),
             # t_orm_3(),
             # t_orm_4(),
@@ -134,7 +139,7 @@ if __name__ == '__main__':
             # t_orm_11(),
             # t_orm_12(),
             # t_orm_13(),
-            # t_orm_14()
+            t_orm_14()
         )
 
     asyncio.run(main())

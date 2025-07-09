@@ -1,5 +1,7 @@
 from typing import Any
 
+from .utils import serialize_query_context
+
 
 class BaseExceptionORM(Exception):
     def __init__(self, message: str,
@@ -25,11 +27,13 @@ class ConfigurateException(BaseExceptionORM):
                  detail: dict[str: Any] = None):
         super().__init__(message, status_code, detail)
 
+
 class ORMException(BaseExceptionORM):
     def __init__(self, message: str = 'ORM Error',
                  status_code: int = 400,
                  detail: dict[str: Any] = None):
         super().__init__(message, status_code, detail)
+
 
 class EntryNotFound(ORMException):
     def __init__(self, message: str = 'Entry not found',
@@ -37,6 +41,5 @@ class EntryNotFound(ORMException):
                  detail: dict[str: Any] = None):
         super().__init__(message, status_code, detail)
 
-    def json(self):
-        return {'message': self.message,
-                'detail': {k:v for k,v in self.detail.items() if v}}
+    def json_detail(self):
+        return serialize_query_context(**self.detail)

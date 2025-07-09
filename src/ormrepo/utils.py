@@ -1,8 +1,9 @@
 from typing import Type, Any, Generic
 
 from pydantic import BaseModel
+from sqlalchemy import ClauseElement
 from sqlalchemy.inspection import inspect
-from sqlalchemy.orm import Mapper, RelationshipProperty
+from sqlalchemy.orm import Mapper, RelationshipProperty, Load
 
 from .logger import log
 from .types_ import Model, Schema
@@ -161,3 +162,50 @@ class NestedUpdater(Generic[Model]):
         for obj in objects:
             if all(getattr(obj, k) == v for k, v in key_vals.items()):
                 return obj
+
+def serialize_expression(expr: ClauseElement) -> str:
+    try:
+        return str(expr.compile(compile_kwargs={"literal_binds": True}))
+    except Exception:
+        return str(expr)
+
+
+def serialize_load_path(load_option: Load) -> str:
+    if hasattr(load_option, "path") and load_option.path:
+        return ".".join(
+            getattr(p, "key", str(p)) for p in load_option.path
+        )
+    return str(load_option)
+
+
+def serialize_query_context(
+        *,
+        pk: Any = None,
+        filters: list[ClauseElement] | None = None,
+        local_filters: list[ClauseElement] | None = None,
+        global_filters: list[ClauseElement] | None = None,
+        load: list[Load] | None = None,
+        relation_filters: dict[Any, list[ClauseElement]] | None = None,
+        offset: int | None = None,
+        limit: int | None = None
+) -> dict[str, Any]:
+    return {
+        **({'pk': pk} if pk is not None else {}),
+        **({'filters': [serialize_expression(x) for x in filters]} if filters else {}),
+        **({'local_filters': [serialize_expression(x) for x in local_filters]} if local_filters else {}),
+        **({'global_filters': [serialize_expression(x) for x in global_filters]} if global_filters else {}),
+        **({
+               'load': [
+                   serialize_load_path(x)
+                   for x in load if isinstance(x, Load)
+               ]
+           } if load else {}),
+        **({
+               'relation_filters': {
+                   model.__name__: [serialize_expression(expr) for expr in exprs]
+                   for model, exprs in relation_filters.items()
+               }
+           } if relation_filters else {}),
+        **({'offset': offset} if offset is not None else {}),
+        **({'limit': limit} if limit is not None else {}),
+    }
