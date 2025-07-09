@@ -6,6 +6,7 @@ from sqlalchemy import select, Sequence, BinaryExpression, and_, ClauseElement
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import with_loader_criteria
 from sqlalchemy.orm.strategy_options import LoaderOption, Load
+from sqlalchemy.orm.util import LoaderCriteriaOption
 
 from .exceptions import ORMException, EntryNotFound
 from .types_ import Model, Schema, PK
@@ -31,7 +32,9 @@ class DatabaseRepository(Generic[Model]):
                  model: type[Model],
                  session: AsyncSession,
                  local_filters: Iterable[ClauseElement] = None,
+                 local_loader_filters: list[LoaderCriteriaOption] = None,
                  use_local_filters: bool = True,
+                 use_local_loader_filters: bool = True,
                  use_global_filters: bool = True):
         """
         Initializes a new instance of the repository.
@@ -45,7 +48,9 @@ class DatabaseRepository(Generic[Model]):
         self.model = model
         self.session = session
         self._local_filters = local_filters
+        self._local_loader_filters = local_loader_filters
         self.use_local_filters = use_local_filters
+        self.use_local_loader_filters = use_local_loader_filters
         self.use_global_filters = use_global_filters
 
     @property
@@ -58,6 +63,17 @@ class DatabaseRepository(Generic[Model]):
             raise ORMException("local_filters must be iterable of sqlalchemy expressions",
                                detail=f'{type(value)=}')
         self._local_filters = value
+
+    @property
+    def local_loader_option(self):
+        return self._local_loader_filters
+
+    @local_loader_option.setter
+    def local_loader_option(self, value):
+        if not all(isinstance(x, LoaderCriteriaOption) for x in value):
+            raise ORMException("local_filters must be iterable of sqlalchemy expressions",
+                               detail=f'{type(value)=}')
+        self._local_loader_filters = value
 
     @log()
     def _resolve_pk_condition(self, pk: PK) -> BinaryExpression:
@@ -181,7 +197,7 @@ class DatabaseRepository(Generic[Model]):
                         'global_filters': config_orm.global_filters if self.use_global_filters else None,
                         'load': load,
                         'relation_filters': relation_filters,
-                        'offset': offset})
+                        'offset': offset if offset else None})
 
     @log()
     async def get_one(self,

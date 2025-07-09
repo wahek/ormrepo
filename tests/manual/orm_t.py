@@ -115,9 +115,13 @@ async def t_orm_14():
 async def t_orm_15():
     async with get_db_session() as session:
         repo = DatabaseRepository(TModel2, session)
-        res = await repo.get_one(1, load=[joinedload(TModel2.relation_model)],
-                                 relation_filters={TModel2: [TModel2.id == 1]})
-        print(res)
+        try:
+            res = await repo.get_many(filters=[TModel2.id > 10, TModel2.id == 1],
+                                      load=[selectinload(TModel2.relation_model)])
+        except EntryNotFound as e:
+            print(e.json_detail())
+            res = None
+        return res
 
 # async def t_orm_16():
 #     async with get_db_session() as session:
@@ -139,7 +143,8 @@ if __name__ == '__main__':
             # t_orm_11(),
             # t_orm_12(),
             # t_orm_13(),
-            t_orm_14()
+            # t_orm_14(),
+            t_orm_15()
         )
 
     asyncio.run(main())
