@@ -174,10 +174,15 @@ class DatabaseRepository(Generic[Model]):
         if res:
             return res
         else:
-            raise EntryNotFound(detail={'pk': pk,
-                                        'filters': [self._expand_expression(x) for x in filters],
-                                        'load': load} |
-                                       ({'global_filters': config_orm.global_filters}))
+            raise EntryNotFound(
+                detail={'pk': pk,
+                        'filters': [self._expand_expression(x) for x in filters],
+                        'local_filters': self._local_filters if self.use_local_filters else None,
+                        'global_filters': config_orm.global_filters if self.use_global_filters else None,
+                        'load': load,
+                        'relation_filters': relation_filters,
+                        'offset': offset,
+                        'limit': limit})
 
     @log()
     async def get_one(self,
@@ -295,6 +300,7 @@ class DTORepository(Generic[Model, Schema]):
     """
     Class wrapper over DatabaseRepository
     """
+
     def __init__(self, repo: DatabaseRepository[Model],
                  schema: type[Schema]):
         """
