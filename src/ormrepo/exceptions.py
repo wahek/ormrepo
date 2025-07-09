@@ -36,3 +36,7 @@ class EntryNotFound(ORMException):
                  status_code: int = 404,
                  detail: dict[str: Any] = None):
         super().__init__(message, status_code, detail)
+
+    def json(self):
+        return {'message': self.message,
+                'detail': {k:v for k,v in self.detail.items() if v}}
