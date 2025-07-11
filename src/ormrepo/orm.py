@@ -32,9 +32,9 @@ class DatabaseRepository(Generic[Model]):
                  model: type[Model],
                  session: AsyncSession,
                  local_filters: Iterable[ClauseElement] = None,
-                 local_loader_filters: list[LoaderCriteriaOption] = None,
+                 local_loader_options: list[LoaderCriteriaOption] = None,
                  use_local_filters: bool = True,
-                 use_local_loader_filters: bool = True,
+                 use_local_loader_options: bool = True,
                  use_global_filters: bool = True):
         """
         Initializes a new instance of the repository.
@@ -48,9 +48,9 @@ class DatabaseRepository(Generic[Model]):
         self.model = model
         self.session = session
         self._local_filters = local_filters
-        self._local_loader_filters = local_loader_filters
+        self._local_loader_options = local_loader_options
         self.use_local_filters = use_local_filters
-        self.use_local_loader_filters = use_local_loader_filters
+        self.use_local_loader_options = use_local_loader_options
         self.use_global_filters = use_global_filters
 
     @property
@@ -65,15 +65,15 @@ class DatabaseRepository(Generic[Model]):
         self._local_filters = value
 
     @property
-    def local_loader_option(self):
-        return self._local_loader_filters
+    def local_loader_options(self):
+        return self._local_loader_options
 
-    @local_loader_option.setter
-    def local_loader_option(self, value):
+    @local_loader_options.setter
+    def local_loader_options(self, value):
         if not all(isinstance(x, LoaderCriteriaOption) for x in value):
-            raise ORMException("local_filters must be iterable of sqlalchemy expressions",
+            raise ORMException("local_options must be iterable of sqlalchemy expressions",
                                detail=f'{type(value)=}')
-        self._local_loader_filters = value
+        self._local_loader_options = value
 
     @log()
     def _resolve_pk_condition(self, pk: PK) -> BinaryExpression:
@@ -173,6 +173,9 @@ class DatabaseRepository(Generic[Model]):
         if self.use_global_filters and config_orm.global_filters:
             stmt = stmt.where(self._resolve_global_filters(config_orm.global_filters))
 
+        if self.use_local_loader_options and self._local_loader_options:
+            stmt = stmt.options(*self._local_loader_options)
+
         if relation_filters:
             stmt = stmt.options(*self._resolve_related_filters(relation_filters))
 
@@ -196,6 +199,7 @@ class DatabaseRepository(Generic[Model]):
                         'local_filters': self._local_filters if self.use_local_filters else None,
                         'global_filters': config_orm.global_filters if self.use_global_filters else None,
                         'load': load,
+                        'local_loader_options': self.local_loader_options if self.use_local_loader_options else None,
                         'relation_filters': relation_filters,
                         'offset': offset if offset else None})
 

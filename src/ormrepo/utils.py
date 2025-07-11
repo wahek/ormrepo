@@ -3,7 +3,7 @@ from typing import Type, Any, Generic
 from pydantic import BaseModel
 from sqlalchemy import ClauseElement
 from sqlalchemy.inspection import inspect
-from sqlalchemy.orm import Mapper, RelationshipProperty, Load
+from sqlalchemy.orm import Mapper, RelationshipProperty, Load, LoaderCriteriaOption
 
 from .logger import log
 from .types_ import Model, Schema
@@ -16,6 +16,7 @@ class ORMBuilder:
     The class supports conversion of nested pydantic models
     into nested sqlalchemy models.
     """
+
     @log()
     def convert(self, schema: Schema | dict, model: Type[Model]) -> Model:
         """
@@ -163,6 +164,7 @@ class NestedUpdater(Generic[Model]):
             if all(getattr(obj, k) == v for k, v in key_vals.items()):
                 return obj
 
+
 def serialize_expression(expr: ClauseElement) -> str:
     try:
         return str(expr.compile(compile_kwargs={"literal_binds": True}))
@@ -185,6 +187,7 @@ def serialize_query_context(
         local_filters: list[ClauseElement] | None = None,
         global_filters: list[ClauseElement] | None = None,
         load: list[Load] | None = None,
+        local_loader_options: list[LoaderCriteriaOption] | None = None,
         relation_filters: dict[Any, list[ClauseElement]] | None = None,
         offset: int | None = None,
         limit: int | None = None
@@ -194,17 +197,22 @@ def serialize_query_context(
         **({'filters': [serialize_expression(x) for x in filters]} if filters else {}),
         **({'local_filters': [serialize_expression(x) for x in local_filters]} if local_filters else {}),
         **({'global_filters': [serialize_expression(x) for x in global_filters]} if global_filters else {}),
-        **({
-               'load': [
-                   serialize_load_path(x)
-                   for x in load if isinstance(x, Load)
-               ]
+        **({'load': [
+            serialize_load_path(x)
+            for x in load if isinstance(x, Load)
+        ]
            } if load else {}),
-        **({
-               'relation_filters': {
-                   model.__name__: [serialize_expression(expr) for expr in exprs]
-                   for model, exprs in relation_filters.items()
-               }
+        **({'local_loader_options': [
+            {
+                'entity': str(opt.entity),
+                'criteria': serialize_expression(opt.where_criteria)
+            }
+            for opt in local_loader_options
+        ]} if local_loader_options else {}),
+        **({'relation_filters': {
+            model.__name__: [serialize_expression(expr) for expr in exprs]
+            for model, exprs in relation_filters.items()
+        }
            } if relation_filters else {}),
         **({'offset': offset} if offset is not None else {}),
         **({'limit': limit} if limit is not None else {}),
