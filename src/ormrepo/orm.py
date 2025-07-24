@@ -338,7 +338,7 @@ class DTORepository(Generic[Model, Schema]):
                               refresh: bool = False) -> Schema | list[Schema]:
         """Method for validating models"""
         if refresh:
-            await self.repo.session.refresh(self.repo.model)
+            await self.repo.session.refresh(model)
         if isinstance(model, Iterable):
             return [self._schema.model_validate(x, from_attributes=True) for x in model]
         return self._schema.model_validate(model,
