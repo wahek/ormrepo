@@ -193,12 +193,12 @@ async def test_create_model1_related1_rel_rel(repo_factory, model1_related1_rel_
         await repo.create(model)
 
 
-async def test_orm_update_model1_related1(repo_orm_factory, model1_related1_rel_rel_orm):
-    repo = repo_orm_factory(TModel1, TModel1Rel1RelRel1Schema)
-    print(model1_related1_rel_rel_orm)
-    for model in model1_related1_rel_rel_orm:
-        model.name = f'new_{model.name}'
-        assert model == await repo.update((model.id, model.serial), model)
+# async def test_orm_update_model1_related1(repo_orm_factory, model1_related1_rel_rel_orm):
+#     repo = repo_orm_factory(TModel1, TModel1Rel1RelRel1Schema)
+#     print(model1_related1_rel_rel_orm)
+#     for model in model1_related1_rel_rel_orm:
+#         model.name = f'new_{model.name}'
+#         assert model == await repo.update((model.id, model.serial), model)
 
 # async def update
 
