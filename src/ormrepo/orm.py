@@ -334,8 +334,11 @@ class DTORepository(Generic[Model, Schema]):
         self._schema = schema
 
     @log()
-    def _model_validate(self, model: Model | Iterable[Model]) -> Schema | list[Schema]:
+    async def _model_validate(self, model: Model | Iterable[Model],
+                        refresh: bool = False) -> Schema | list[Schema]:
         """Method for validating models"""
+        if refresh:
+            await self.repo.session.refresh(self.repo.model)
         if isinstance(model, Iterable):
             return [self._schema.model_validate(x, from_attributes=True) for x in model]
         return self._schema.model_validate(model,
@@ -358,7 +361,7 @@ class DTORepository(Generic[Model, Schema]):
                      models deeper than 2 levels
         :return: pydantic schema
         """
-        res = self._model_validate(
+        res = await self._model_validate(
             await self.repo.get_one(pk, load,
                                     relation_filters=relation_filters))
         if logger.isEnabledFor(logging.INFO):
@@ -394,7 +397,7 @@ class DTORepository(Generic[Model, Schema]):
                                           relation_filters=relation_filters,
                                           offset=offset,
                                           limit=limit)
-        res = self._model_validate(models)  # type: ignore
+        res = await self._model_validate(models)  # type: ignore
         if logger.isEnabledFor(logging.INFO):
             logger.info("Serialized %d %s", len(res), format_list_log_preview(res))
         return res
@@ -420,7 +423,7 @@ class DTORepository(Generic[Model, Schema]):
         """
         builder = ORMBuilder()
         model = builder.convert(schema, self.repo.model)
-        res = self._model_validate(await self.repo.create(model))
+        res = await self._model_validate(await self.repo.create(model))
         if logger.isEnabledFor(logging.INFO):
             logger.info("Serialized %d %s", 1, res)
         return res
@@ -428,7 +431,8 @@ class DTORepository(Generic[Model, Schema]):
     @log()
     async def update(self, pk: PK,
                      data: BaseModel,
-                     load: list[LoaderOption] = None) -> Schema:
+                     load: list[LoaderOption] = None,
+                     refresh: bool = False) -> Schema:
         """
         Method for updating records in a database and adding them to a session then convert response from DTO
 
@@ -437,10 +441,11 @@ class DTORepository(Generic[Model, Schema]):
         :param load: sqlalchemy load options: example: [joinedload(Model.relation),...]
                      or [selectinload(Model.relation).joinedload(Model.relation.relation),...] for nested
                      models deeper than 2 levels
+        :param refresh: Update record. Use if the model has autocomplete properties on the server side.
         :return: pydantic schema of the updated model in session
         """
         data = data.model_dump(exclude_unset=True)
-        res = self._model_validate(
+        res = await self._model_validate(
             await self.repo.update(
                 pk, data, load))
         if logger.isEnabledFor(logging.INFO):
@@ -456,7 +461,7 @@ class DTORepository(Generic[Model, Schema]):
         :param pk: primary key for table (composite or regular) example: {'id': 1} | 1 | (1, 3) etc...
         :return: pydantic schema of the deleted model in session
         """
-        res = self._model_validate(
+        res = await self._model_validate(
             await self.repo.delete(pk))
         if logger.isEnabledFor(logging.INFO):
             logger.info("Serialized %d %s", 1, res)
