@@ -335,7 +335,7 @@ class DTORepository(Generic[Model, Schema]):
 
     @log()
     async def _model_validate(self, model: Model | Iterable[Model],
-                        refresh: bool = False) -> Schema | list[Schema]:
+                              refresh: bool = False) -> Schema | list[Schema]:
         """Method for validating models"""
         if refresh:
             await self.repo.session.refresh(self.repo.model)
@@ -446,8 +446,8 @@ class DTORepository(Generic[Model, Schema]):
         """
         data = data.model_dump(exclude_unset=True)
         res = await self._model_validate(
-            await self.repo.update(
-                pk, data, load))
+            await self.repo.update(pk, data, load),
+            refresh)
         if logger.isEnabledFor(logging.INFO):
             logger.info("Serialized %d %s", 1, res)
         return res
