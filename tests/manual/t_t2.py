@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from sqlalchemy.inspection import inspect as sqlalchemy_inspect
 from sqlalchemy.util import ReadOnlyProperties
 
-from ormrepo.types_ import Model, Schema
+from ormrepo.types_ import ModelT, SchemaBaseT
 from tests.models import (TModel1, RelationModel1, TModel1Schema, RelationModel1Schema, TModel1Rel1Schema,
                           TModel2, RelationModel2Schema, TModel2Schema, TModel2Rel2Schema, TModel1Rel1RelRel1Schema,
                           RelationModel1RelRel1Schema, RelRelSchema)

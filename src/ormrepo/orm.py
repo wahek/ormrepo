@@ -1,21 +1,21 @@
 import logging
-from typing import Generic, Any, Iterable
+from typing import Generic, Any, Iterable, overload
 
 from pydantic import BaseModel
-from sqlalchemy import select, Sequence, BinaryExpression, and_, ClauseElement
+from sqlalchemy import select, Sequence, BinaryExpression, and_, ClauseElement, inspect
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import with_loader_criteria
+from sqlalchemy.orm import with_loader_criteria, InstrumentedAttribute
 from sqlalchemy.orm.strategy_options import LoaderOption, Load
 from sqlalchemy.orm.util import LoaderCriteriaOption
 
 from .exceptions import ORMException, EntryNotFound
-from .types_ import Model, Schema, PK
+from .types_ import ModelT, SchemaBaseT, PK, SchemaT
 from .db_settings import config_orm
 from .logger import logger, format_list_log_preview, log
 from .utils import NestedUpdater, ORMBuilder
 
 
-class DatabaseRepository(Generic[Model]):
+class DatabaseRepository(Generic[ModelT]):
     """
     Class for working with a database using the repository pattern.
 
@@ -29,7 +29,7 @@ class DatabaseRepository(Generic[Model]):
     """
 
     def __init__(self,
-                 model: type[Model],
+                 model: type[ModelT],
                  session: AsyncSession,
                  local_filters: Iterable[ClauseElement] = None,
                  local_loader_options: list[LoaderCriteriaOption] = None,
@@ -143,11 +143,12 @@ class DatabaseRepository(Generic[Model]):
                    filters: Iterable[ClauseElement] = None,
                    load: list[LoaderOption] = None,
                    *,
-                   relation_filters: dict[Model, list[ClauseElement]] = None,
+                   join_filters: dict[type[ModelT], list[ClauseElement]] = None,
+                   relation_filters: dict[type[ModelT], list[ClauseElement]] = None,
                    offset: int = 0,
                    limit: int = None,
                    one: bool = False,
-                   ) -> Model | Sequence[Model]:
+                   ) -> ModelT | Sequence[ModelT]:
         """The primary method for retrieving records from the database.
         This method is used by all other methods when accessing the database."""
 
@@ -160,6 +161,13 @@ class DatabaseRepository(Generic[Model]):
         stmt = select(self.model)
         if pk:
             stmt = stmt.where(self._resolve_pk_condition(pk))
+
+        if join_filters:
+            for model, filters in join_filters.items():
+                stmt = stmt.join(model)  # SQLA сам выведет ON, если FK есть
+
+                for f in filters:
+                    stmt = stmt.where(f)
 
         for option in load:
             stmt = stmt.options(option)
@@ -208,8 +216,9 @@ class DatabaseRepository(Generic[Model]):
                       pk: PK,
                       load: list[LoaderOption] = None,
                       *,
-                      relation_filters: dict[type[Model], list[ClauseElement]] = None,
-                      ) -> Model:
+                      join_filters: dict[type[ModelT], list[ClauseElement]] = None,
+                      relation_filters: dict[type[ModelT], list[ClauseElement]] = None,
+                      ) -> ModelT:
         """
         Method to get a single record from the database
 
@@ -217,11 +226,13 @@ class DatabaseRepository(Generic[Model]):
         :param load: sqlalchemy load options: example: [joinedload(Model.relation),...]
                      or [selectinload(Model.relation).joinedload(Model.relation.relation),...] for nested
                      models deeper than 2 levels
-        :param relation_filters: filters for related models example: {Model2: [Model2.id == 1]}
+        :param join_filters: sqlalchemy filters for joined models example: {RelationModel: [RelationModel.id == 1]}
+        :param relation_filters: filters for related models example: {RelationModel: [RelationModel.id == 1]}
         :return: sqlalchemy model
         """
         res = await self._get(pk,
                               load=load,
+                              join_filters=join_filters,
                               relation_filters=relation_filters,
                               one=True)
         if logger.isEnabledFor(logging.INFO):
@@ -233,10 +244,11 @@ class DatabaseRepository(Generic[Model]):
                        filters: Iterable[ClauseElement] = None,
                        load: list[LoaderOption] = None,
                        *,
-                       relation_filters: dict[type[Model], list[ClauseElement]] = None,
+                       join_filters: dict[type[ModelT], list[ClauseElement]] = None,
+                       relation_filters: dict[type[ModelT], list[ClauseElement]] = None,
                        offset: int = None,
                        limit: int = None
-                       ) -> Sequence[Model]:
+                       ) -> Sequence[ModelT]:
         """
         Method to get multiple records from the database
 
@@ -246,6 +258,7 @@ class DatabaseRepository(Generic[Model]):
         :param load: sqlalchemy load options: example: [joinedload(Model.relation),...]
                      or [selectinload(Model.relation).joinedload(Model.relation.relation),...] for nested
                      models deeper than 2 levels
+        :param join_filters: sqlalchemy filters for joined models example: {RelationModel: [RelationModel.id == 1]}
         :param relation_filters: filters for related models example: {Model2: [Model2.id == 1]}
         :param offset: Number of how many records to skip
         :param limit: Maximum number of records returned
@@ -255,6 +268,7 @@ class DatabaseRepository(Generic[Model]):
         res = await self._get(None,
                               filters,
                               load,
+                              join_filters=join_filters,
                               relation_filters=relation_filters,
                               offset=offset,
                               limit=limit)
@@ -264,7 +278,7 @@ class DatabaseRepository(Generic[Model]):
 
     @log()
     async def create(self,
-                     model: Model) -> Model:
+                     model: ModelT) -> ModelT:
         """
         Method for adding records to a session
 
@@ -280,8 +294,10 @@ class DatabaseRepository(Generic[Model]):
     async def update(self,
                      pk: PK,
                      data: dict[str, Any],
-                     load: list[LoaderOption] = None
-                     ) -> Model:
+                     load: list[LoaderOption] = None,
+                     *,
+                     join_filters: dict[type[ModelT], list[ClauseElement]] = None,
+                     ) -> ModelT:
         """
         Method for updating records in a database and adding them to a session
 
@@ -290,9 +306,10 @@ class DatabaseRepository(Generic[Model]):
         :param load: sqlalchemy load options: example: [joinedload(Model.relation),...]
                      or [selectinload(Model.relation).joinedload(Model.relation.relation),...] for nested
                      models deeper than 2 levels
+        :param join_filters: sqlalchemy filters for joined models example: {RelationModel: [RelationModel.id == 1]}
         :return: updated model in session
         """
-        model = await self._get(pk, load=load, one=True)
+        model = await self._get(pk, load=load, join_filters=join_filters, one=True)
         NestedUpdater(model).update(data)
         await self.session.flush()
         if logger.isEnabledFor(logging.INFO):
@@ -300,14 +317,19 @@ class DatabaseRepository(Generic[Model]):
         return model
 
     @log()
-    async def delete(self, pk: PK) -> Model:
+    async def delete(self,
+                     pk: PK,
+                     *,
+                     join_filters: dict[type[ModelT], list[ClauseElement]] = None, ) -> ModelT:
         """
         Method for deleting records in a database and adding them to a session
 
         :param pk: primary key for table (composite or regular) example: {'id': 1} | 1 | (1, 3) etc...
+        :param join_filters: sqlalchemy filters for joined models example: {RelationModel: [RelationModel.id == 1]}
+
         :return: deleted model in session
         """
-        model = await self._get(pk, one=True)
+        model = await self._get(pk, one=True, join_filters=join_filters)
         await self.session.delete(model)
         await self.session.flush()
         if logger.isEnabledFor(logging.INFO):
@@ -315,13 +337,14 @@ class DatabaseRepository(Generic[Model]):
         return model
 
 
-class DTORepository(Generic[Model, Schema]):
+class DTORepository(Generic[ModelT, SchemaBaseT]):
     """
     Class wrapper over DatabaseRepository
     """
 
-    def __init__(self, repo: DatabaseRepository[Model],
-                 schema: type[Schema]):
+    def __init__(self,
+                 repo: DatabaseRepository[ModelT],
+                 schema: type[SchemaBaseT]):
         """
         Initializes a new instance of the repository
 
@@ -334,52 +357,113 @@ class DTORepository(Generic[Model, Schema]):
         self._schema = schema
 
     @log()
-    async def _model_validate(self, model: Model | Iterable[Model],
-                              refresh: bool = False) -> Schema | list[Schema]:
+    async def _model_validate(self,
+                              model: ModelT | Iterable[ModelT],
+                              refresh: bool = False,
+                              schema: type[SchemaT] | None = None,
+                              ) -> SchemaBaseT | list[SchemaBaseT]:
         """Method for validating models"""
+        schema = schema or self._schema
         if refresh:
             await self.repo.session.refresh(model)
         if isinstance(model, Iterable):
-            return [self._schema.model_validate(x, from_attributes=True) for x in model]
-        return self._schema.model_validate(model,
-                                           from_attributes=True)
+            return [schema.model_validate(x, from_attributes=True) for x in model]
+        return schema.model_validate(model,
+                                     from_attributes=True)
+
+    @overload
+    async def get_one(self,
+                      pk: int,
+                      load: list[LoaderOption] | None = None,
+                      *,
+                      join_filters: dict[type[ModelT], list[ClauseElement]] = None,
+                      relation_filters: dict[type[ModelT], list[ClauseElement]] = None,
+                      ) -> SchemaBaseT:
+        ...
+
+    @overload
+    async def get_one(self,
+                      pk: int,
+                      load: list[LoaderOption] | None = None,
+                      *,
+                      schema: type[SchemaT],
+                      join_filters: dict[type[ModelT], list[ClauseElement]] = None,
+                      relation_filters: dict[type[ModelT], list[ClauseElement]] = None,
+                      ) -> SchemaT:
+        ...
 
     @log()
     async def get_one(self,
                       pk: PK,
                       load: list[LoaderOption] = None,
                       *,
-                      relation_filters: dict[Model, list[ClauseElement]] = None,
-                      ) -> Schema:
+                      schema: type[SchemaT] | None = None,
+                      join_filters: dict[type[ModelT], list[ClauseElement]] = None,
+                      relation_filters: dict[type[ModelT], list[ClauseElement]] = None,
+                      ) -> SchemaBaseT | SchemaT:
         """
         Method to get a single record from the database and convert response from DTO.
 
+        :param schema: custom pydantic schema for response
+        :param join_filters: sqlalchemy filters for joined models example: {RelationModel: [RelationModel.id == 1]}
         :param relation_filters: filters for related models example: {Model2: [Model2.id == 1]}
         :param pk: primary key for table (composite or regular) example: {'id': 1} | 1 | (1, 3) etc...
         :param load: sqlalchemy load options: example: [joinedload(Model.relation),...]
                      or [selectinload(Model.relation).joinedload(Model.relation.relation),...] for nested
                      models deeper than 2 levels
+
         :return: pydantic schema
         """
         res = await self._model_validate(
             await self.repo.get_one(pk, load,
-                                    relation_filters=relation_filters))
+                                    join_filters=join_filters,
+                                    relation_filters=relation_filters),
+            schema=schema)
         if logger.isEnabledFor(logging.INFO):
             logger.info("Serialized %d %s", 1, res)
         return res
+
+    @overload
+    async def get_many(self,
+                       filters: Iterable[ClauseElement] = None,
+                       load: list[LoaderOption] = None,
+                       *,
+                       join_filters: dict[type[ModelT], list[ClauseElement]] = None,
+                       relation_filters: dict[type[ModelT], list[ClauseElement]] = None,
+                       offset: int = 0,
+                       limit: int = None
+                       ) -> list[SchemaBaseT]:
+        ...
+
+    @overload
+    async def get_many(self,
+                       filters: Iterable[ClauseElement] = None,
+                       load: list[LoaderOption] = None,
+                       *,
+                       schema: type[SchemaT],
+                       join_filters: dict[type[ModelT], list[ClauseElement]] = None,
+                       relation_filters: dict[type[ModelT], list[ClauseElement]] = None,
+                       offset: int = 0,
+                       limit: int = None
+                       ) -> list[SchemaT]:
+        ...
 
     @log()
     async def get_many(self,
                        filters: Iterable[ClauseElement] = None,
                        load: list[LoaderOption] = None,
                        *,
-                       relation_filters: dict[Model, list[ClauseElement]] = None,
+                       schema: type[SchemaT] | None = None,
+                       join_filters: dict[type[ModelT], list[ClauseElement]] = None,
+                       relation_filters: dict[type[ModelT], list[ClauseElement]] = None,
                        offset: int = 0,
                        limit: int = None
-                       ) -> list[Schema]:
+                       ) -> list[SchemaBaseT] | list[SchemaT]:
         """
         Method to get multiple records from the database and convert response from DTO
 
+        :param schema: custom pydantic schema for response
+        :param join_filters: sqlalchemy filters for joined models example: {RelationModel: [RelationModel.id == 1]}
         :param relation_filters: filters for related models example: {Model2: [Model2.id == 1]}
         :param filters: filters for model example: [Model.id == 1, Model.price > 100]
                                                    or [Model.id.in_([1, 2, 3])]
@@ -394,17 +478,35 @@ class DTORepository(Generic[Model, Schema]):
         """
         models = await self.repo.get_many(filters,
                                           load,
+                                          join_filters=join_filters,
                                           relation_filters=relation_filters,
                                           offset=offset,
                                           limit=limit)
-        res = await self._model_validate(models)  # type: ignore
+        res = await self._model_validate(models, schema=schema)  # type: ignore
         if logger.isEnabledFor(logging.INFO):
             logger.info("Serialized %d %s", len(res), format_list_log_preview(res))
         return res
 
+    @overload
+    async def create(self,
+                     data: BaseModel,
+                     ) -> SchemaBaseT:
+        ...
+
+    @overload
+    async def create(self,
+                     data: BaseModel,
+                     *,
+                     schema: type[SchemaT]
+                     ) -> SchemaT:
+        ...
+
     @log()
     async def create(self,
-                     schema: BaseModel) -> Schema:
+                     data: BaseModel,
+                     *,
+                     schema: type[SchemaT] | None = None,
+                     ) -> SchemaBaseT:
         """
         Method for adding records to a session
 
@@ -418,21 +520,46 @@ class DTORepository(Generic[Model, Schema]):
                 name: str
                 model: Model
 
-        :param schema: pydantic model
+        :param data: pydantic model
+        :param schema: custom pydantic schema for response
         :return: pydantic schema of the model added to the session
         """
         builder = ORMBuilder()
-        model = builder.convert(schema, self.repo.model)
-        res = await self._model_validate(await self.repo.create(model))
+        model = builder.convert(data, self.repo.model)
+        res = await self._model_validate(await self.repo.create(model),
+                                         schema)
         if logger.isEnabledFor(logging.INFO):
             logger.info("Serialized %d %s", 1, res)
         return res
+
+    @overload
+    async def update(self, pk: PK,
+                     data: BaseModel,
+                     load: list[LoaderOption] = None,
+                     refresh: bool = False,
+                     *,
+                     join_filters: dict[type[ModelT], list[ClauseElement]] = None, ) -> SchemaBaseT:
+        ...
+
+    @overload
+    async def update(self, pk: PK,
+                     data: BaseModel,
+                     load: list[LoaderOption] = None,
+                     refresh: bool = False,
+                     *,
+                     schema: SchemaT,
+                     join_filters: dict[type[ModelT], list[ClauseElement]] = None, ) -> SchemaT:
+        ...
+
 
     @log()
     async def update(self, pk: PK,
                      data: BaseModel,
                      load: list[LoaderOption] = None,
-                     refresh: bool = False) -> Schema:
+                     refresh: bool = False,
+                     *,
+                     schema: SchemaT | None = None,
+                     join_filters: dict[type[ModelT], list[ClauseElement]] = None, ) -> SchemaBaseT:
         """
         Method for updating records in a database and adding them to a session then convert response from DTO
 
@@ -441,28 +568,36 @@ class DTORepository(Generic[Model, Schema]):
         :param load: sqlalchemy load options: example: [joinedload(Model.relation),...]
                      or [selectinload(Model.relation).joinedload(Model.relation.relation),...] for nested
                      models deeper than 2 levels
+        :param schema: custom pydantic schema for response
         :param refresh: Update record. Use if the model has autocomplete properties on the server side.
+        :param join_filters: sqlalchemy filters for joined models example: {RelationModel: [RelationModel.id == 1]}
+
         :return: pydantic schema of the updated model in session
         """
         data = data.model_dump(exclude_unset=True)
         res = await self._model_validate(
-            await self.repo.update(pk, data, load),
-            refresh)
+            await self.repo.update(pk, data, load,
+                                   join_filters=join_filters),
+            refresh,
+            schema=schema)
         if logger.isEnabledFor(logging.INFO):
             logger.info("Serialized %d %s", 1, res)
         return res
 
     @log()
     async def delete(self,
-                     pk: PK) -> Schema:
+                     pk: PK,
+                     join_filters: dict[type[ModelT], list[ClauseElement]] = None, ) -> SchemaBaseT:
         """
         Method for deleting records in a database and adding them to a session then convert response from DTO
 
         :param pk: primary key for table (composite or regular) example: {'id': 1} | 1 | (1, 3) etc...
+        :param join_filters: sqlalchemy filters for joined models example: {RelationModel: [RelationModel.id == 1]}
+
         :return: pydantic schema of the deleted model in session
         """
         res = await self._model_validate(
-            await self.repo.delete(pk))
+            await self.repo.delete(pk, join_filters=join_filters))
         if logger.isEnabledFor(logging.INFO):
             logger.info("Serialized %d %s", 1, res)
         return res

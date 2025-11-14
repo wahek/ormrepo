@@ -6,7 +6,7 @@ from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import Mapper, RelationshipProperty, Load, LoaderCriteriaOption
 
 from .logger import log
-from .types_ import Model, Schema
+from .types_ import ModelT, SchemaBaseT
 
 
 class ORMBuilder:
@@ -18,7 +18,7 @@ class ORMBuilder:
     """
 
     @log()
-    def convert(self, schema: Schema | dict, model: Type[Model]) -> Model:
+    def convert(self, schema: SchemaBaseT | dict, model: Type[ModelT]) -> ModelT:
         """
         Main conversion method
 
@@ -28,7 +28,7 @@ class ORMBuilder:
         """
         return self._create_model_from_schema(schema, model)
 
-    def _create_model_from_schema(self, schema: Schema | dict, model: Type[Model]) -> Model:
+    def _create_model_from_schema(self, schema: SchemaBaseT | dict, model: Type[ModelT]) -> ModelT:
         """Generates a model instance based on parameters from a model or dictionary"""
         data = self._extract_data(schema)
         model_kwargs = {}
@@ -48,7 +48,7 @@ class ORMBuilder:
         return model(**model_kwargs)
 
     @staticmethod
-    def _extract_data(schema: Schema | dict) -> dict:
+    def _extract_data(schema: SchemaBaseT | dict) -> dict:
         """Extracts data from the model if it has not already been extracted."""
         if isinstance(schema, BaseModel):
             return schema.model_dump()
@@ -58,13 +58,13 @@ class ORMBuilder:
             raise TypeError(f"Unsupported schema type: {type(schema)}")
 
     @staticmethod
-    def _is_relationship(model: Type[Model], field_name: str) -> bool:
+    def _is_relationship(model: Type[ModelT], field_name: str) -> bool:
         """Finds related tables in the model"""
         mapper = inspect(model)
         return field_name in mapper.relationships
 
     @staticmethod
-    def _get_related_model_class(model: Type[Model], field_name: str) -> Type[Model] | None:
+    def _get_related_model_class(model: Type[ModelT], field_name: str) -> Type[ModelT] | None:
         """Gets the model class from the relationship"""
         mapper = inspect(model)
         rel = mapper.relationships.get(field_name)
@@ -73,7 +73,7 @@ class ORMBuilder:
         return None
 
 
-class NestedUpdater(Generic[Model]):
+class NestedUpdater(Generic[ModelT]):
     """
     Updates values on a model instance
 
@@ -81,11 +81,11 @@ class NestedUpdater(Generic[Model]):
      :param entry: sqlalchemy model instance
     """
 
-    def __init__(self, entry: Model):
+    def __init__(self, entry: ModelT):
         self.entry = entry
 
     @log()
-    def update(self, data: dict[str, Any]) -> Model:
+    def update(self, data: dict[str, Any]) -> ModelT:
         """
         Main update method
 
@@ -96,7 +96,7 @@ class NestedUpdater(Generic[Model]):
         self._apply(self.entry, data)
         return self.entry
 
-    def _apply(self, entry: Model, data: dict[str, Any]) -> None:
+    def _apply(self, entry: ModelT, data: dict[str, Any]) -> None:
         """Choosing which update method to choose for models or nested models"""
         mapper: Mapper = inspect(entry.__class__)
         relationships = {rel.key: rel for rel in mapper.relationships}  # type: ignore
@@ -112,11 +112,11 @@ class NestedUpdater(Generic[Model]):
                 self._update_scalar(entry, key, value)
 
     @staticmethod
-    def _update_scalar(entry: Model, key: str, value: Any) -> None:
+    def _update_scalar(entry: ModelT, key: str, value: Any) -> None:
         """Updates model."""
         setattr(entry, key, value)
 
-    def _update_one_to_one(self, entry: Model, rel: RelationshipProperty, value: Any) -> None:
+    def _update_one_to_one(self, entry: ModelT, rel: RelationshipProperty, value: Any) -> None:
         """Updates nested model. Relationship is one-to-one"""
         if value is None:
             setattr(entry, rel.key, None)

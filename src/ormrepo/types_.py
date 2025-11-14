@@ -6,7 +6,8 @@ from typing_extensions import TypeVar
 
 from .models import OrmBase
 
-Model = TypeVar("Model", bound=OrmBase) # sqlalchemy model (inherited from DeclarativeBase)
-Schema = TypeVar("Schema", bound=BaseModel) # pydantic model
+ModelT = TypeVar("ModelT", bound=OrmBase) # sqlalchemy model (inherited from DeclarativeBase)
+SchemaBaseT = TypeVar("SchemaBaseT", bound=BaseModel) # pydantic model
+SchemaT = TypeVar("SchemaT", bound=BaseModel)
 PK: TypeAlias = str | int | UUID | Any | dict[str, Any] | tuple[Any, ...] # any primary key (composite or regular)
 log_level = Literal['CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG', 'NOTSET'] # logging level
